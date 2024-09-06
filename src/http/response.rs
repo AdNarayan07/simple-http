@@ -43,7 +43,6 @@ impl HttpResponse {
         resource = resource .trim_start_matches('/')
         .trim_end_matches('/').to_string();
         let new_path = server_root_path.join(&resource);
-
         let method = request.method;
         let four_o_four = b"
         <html>
@@ -51,6 +50,8 @@ impl HttpResponse {
         <h1>404 NOT FOUND</h1>
         </body>
         </html>".to_vec();
+
+        if server_root_path.canonicalize()?.components().count() <= new_path.canonicalize()?.components().count(){
         match method {
             Method::Get => {
                 if new_path.exists() {
@@ -121,6 +122,17 @@ impl HttpResponse {
                 response_body.extend_from_slice(&four_o_four)
             }
         }
+        } else {
+            status = ResponseStatus::Unauthorized;
+            let four_o_one = b"
+            <html>
+            <body>
+            <h1>401 Unauthorized</h1>
+            </body>
+            </html>".to_vec();
+            content_length = four_o_one.len();
+            response_body.extend_from_slice(&four_o_one)
+        }
         Ok(HttpResponse { version, status, content_length, content_type, accept_ranges, response_body })
     }
 }
@@ -129,13 +141,15 @@ impl HttpResponse {
 pub enum ResponseStatus {
     OK = 200,
     NotFound = 404,
+    Unauthorized = 401
 }
 
 impl Display for ResponseStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let msg = match self {
             ResponseStatus::OK => "200 OK",
-            ResponseStatus::NotFound => "404 NOT FOUND"
+            ResponseStatus::NotFound => "404 NOT FOUND",
+            ResponseStatus::Unauthorized => "401 UNAUTHORIZED"
         };
         write!(f, "{}", msg)
     }
