@@ -11,3 +11,5 @@ git clone https://github.com/AdNarayan07/simple-http
 cargo run
 ```
 4. Open http://localhost:5500/ in your browser to browse the files
+
+// final commit for working code
