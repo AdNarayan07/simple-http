@@ -35,7 +35,7 @@ impl HttpResponse {
         let mut accept_ranges: AcceptRanges = AcceptRanges::None;
         let mut response_body: Vec<u8> = Vec::new();
 
-        let server_root_path = current_dir()?.join("serve-dir");
+        let server_root_path = current_dir()?;
         let mut resource = String::new();
         url_escape::decode_to_string(request.resource.path.clone(), &mut resource);
         resource = resource
