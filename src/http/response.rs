@@ -81,7 +81,7 @@ impl HttpResponse {
                         <html>
                         <head><title>Directory Listing</title></head>
                         <body>
-                        <h1><a href=\"../{}\"><button>Back</button></a>Directory Listing</h1>
+                        <h1><a href=\"/{}\"><button>Back</button></a>Directory Listing</h1>
                         <ul>
                         ",
                                 prev_path
