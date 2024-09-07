@@ -1,4 +1,4 @@
-use super::request::{HttpRequest, Method, Version};
+use super::{ request::{ HttpRequest, Method, Version }, template::{ generate_html, generate_ul } };
 use std::{env::current_dir, fmt::Display, fs, io::Result};
 use url_escape;
 
@@ -30,7 +30,7 @@ impl HttpResponse {
     pub fn new(request: &HttpRequest) -> Result<HttpResponse> {
         let version: Version = Version::V1_1;
         let mut status: ResponseStatus = ResponseStatus::NotFound;
-        let content_length: usize;
+        let mut content_length: usize = 0;
         let mut content_type: String = String::from("text/html");
         let mut accept_ranges: AcceptRanges = AcceptRanges::None;
         let mut response_body: Vec<u8> = Vec::new();
@@ -44,14 +44,11 @@ impl HttpResponse {
             .to_string();
         let new_path = server_root_path.join(&resource);
         let method = request.method;
-        let four_o_four = b"
-        <html>
-        <body>
-        <h1>404 NOT FOUND</h1>
-        </body>
-        </html>"
-            .to_vec();
-
+        let mut generate_err_msg = |error| {
+            status = error;
+            response_body.extend_from_slice(generate_html(status.to_string(), format!("<h1>{status}</h1>")).as_bytes());
+            content_length = response_body.len();
+        };
         match method {
             Method::Get => {
                 if new_path.exists() {
@@ -59,8 +56,7 @@ impl HttpResponse {
                     let new_path = new_path.canonicalize()?;
                     let allowed = new_path.starts_with(server_root);
 
-                    if allowed
-                    {
+                    if allowed {
                         if new_path.is_file() {
                             let content = fs::read(&new_path)?;
                             content_length = content.len();
@@ -76,20 +72,16 @@ impl HttpResponse {
                                 Some(index) => resource[..index].to_string(), // Slice up to the last slash
                                 None => "".to_string(), // Return empty if there's no slash
                             };
-                            let mut content = format!(
-                                "
-                        <html>
-                        <head><title>Directory Listing</title></head>
-                        <body>
-                        <h1><a href=\"/{}\"><button>Back</button></a>Directory Listing</h1>
-                        <ul>
-                        ",
-                                prev_path
-                            )
-                            .into_bytes();
+                            let header = format!(r#"
+                            <h2><a href="/{prev_path}"><button>↩📂</button></a><code> ://root/{resource} </code></h2>
+                            "#);
+
+                            let mut list_items: Vec<String> = Vec::new();
 
                             if let Ok(entries) = fs::read_dir(new_path) {
+                                let mut number_entries = 0;
                                 for entry in entries {
+                                    number_entries += 1;
                                     if let Ok(entry) = entry {
                                         let path = entry.path();
                                         let file_name =
@@ -100,54 +92,42 @@ impl HttpResponse {
                                         } else {
                                             format!("/{}/{}", resource, file_name)
                                         };
-
-                                        content.extend_from_slice(
-                                            &format!(
-                                                r#"<li><a href="{}">{}</a></li>"#,
-                                                &resource_path, &file_name
-                                            )
-                                            .as_bytes(),
-                                        );
+                                        let mut icon = "";
+                                        if path.is_file() {
+                                            icon = "📄"
+                                        } else if path.is_dir() {
+                                            icon = "📁"
+                                        }
+                                        list_items.push(format!(r#"<a href="{resource_path}"><li><span>{icon}</span><span>{file_name}</span></li></a>"#))
                                     }
                                 }
+                                if number_entries == 0 {
+                                    list_items.push("<h1>Empty Directory</h1>".to_string());
+                                };
+                                let unordered_list = generate_ul(&list_items);
+                                let content = format!("{header}{unordered_list}");
+                                status = ResponseStatus::OK;
+                                accept_ranges = AcceptRanges::Bytes;
+                                let html_file = generate_html(resource, content);
+                                content_length = html_file.len();
+                                response_body.extend_from_slice(&html_file.as_bytes());
+                            } else {
+                                println!("Err reading dir");
+                                generate_err_msg(ResponseStatus::NotFound);
                             }
-                            content.extend_from_slice(
-                                b"
-                        </ul>
-                        </body>
-                        </html>
-                        ",
-                            );
-                            content_length = content.len();
-                            status = ResponseStatus::OK;
-                            accept_ranges = AcceptRanges::Bytes;
-                            response_body.extend_from_slice(&content);
                         } else {
                             println!("Not a file or directory");
-                            content_length = four_o_four.len();
-                            response_body.extend_from_slice(&four_o_four);
+                            generate_err_msg(ResponseStatus::NotFound);
                         }
                     } else {
-                        status = ResponseStatus::Forbidden;
-                        let four_o_one = b"
-                            <html>
-                            <body>
-                            <h1>403 Forbidden</h1>
-                            </body>
-                            </html>".to_vec();
-                        content_length = four_o_one.len();
-                        response_body.extend_from_slice(&four_o_one)
+                        generate_err_msg(ResponseStatus::Forbidden);
                     }
                 } else {
-                    println!("Path \"{:?}\" does not exist", new_path);
-                    content_length = four_o_four.len();
-                    response_body.extend_from_slice(&four_o_four);
+                    generate_err_msg(ResponseStatus::NotFound);
                 }
             }
             _ => {
-                println!("Invalid request type");
-                content_length = four_o_four.len();
-                response_body.extend_from_slice(&four_o_four)
+               generate_err_msg(ResponseStatus::NotFound);
             }
         }
         Ok(HttpResponse {
